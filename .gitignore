@@ -127,3 +127,9 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# Video files
+*.mov
+
+# notebook checkpoints
+**/*.ipynb_checkpoints/
