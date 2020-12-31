@@ -31,6 +31,7 @@ from PIL import Image, ImageDraw
 from tqdm.auto import tqdm
 from pathlib import Path
 import matplotlib.pyplot as plt
+from utils import collate_fn
 
 # # Create Datasets
 
@@ -40,7 +41,7 @@ mask_path_test = Path('./data/joined_masks/test/')
 
 
 class BubbleDataset(torch.utils.data.Dataset):
-    def __init__(self, img_path, mask_path):
+    def __init__(self, img_path, mask_path,scale = 1):
         super(BubbleDataset, self).__init__()
         image_id = os.listdir(mask_path)
         ids = []
@@ -50,6 +51,7 @@ class BubbleDataset(torch.utils.data.Dataset):
             if np.max(mask)>0:
                 ids.append(iid)
         self.image_id = ids
+        self.scale = scale
         self.image_path = img_path
         self.mask_path = mask_path
 
@@ -62,26 +64,36 @@ class BubbleDataset(torch.utils.data.Dataset):
         obj_ids = np.unique(array)[1:]
 
         boxes = []
+        scale = self.scale
         for i in obj_ids:
             pos = np.where(array == i)
-            xmin = np.min(pos[1])
-            xmax = np.max(pos[1])
-            ymin = np.min(pos[0])
-            ymax = np.max(pos[0])
+            xmin = np.min(pos[1])*scale
+            xmax = np.max(pos[1])*scale
+            ymin = np.min(pos[0])*scale
+            ymax = np.max(pos[0])*scale
             boxes.append([xmin, ymin, xmax, ymax])
         return np.array(boxes)
 
     def get_image(self, idx):
         path = os.path.join(self.image_path, self.image_id[idx])
         image = Image.open(path)
+        if self.scale !=1:
+            scale = self.scale
+            size = (int(d*scale) for d in image.size)
+            image = image.resize(size,Image.BICUBIC)
         return image
 
     def get_mask(self, idx):
         path = os.path.join(self.mask_path, self.image_id[idx])
         mask = Image.open(path)
+        if self.scale!=1:
+            scale = self.scale
+            size = (int(d*scale) for d in mask.size)
+            mask = mask.resize(size,Image.BICUBIC)
         if np.max(mask) == 0:
             return mask, np.array(mask)
-        nmax = np.max(mask)
+        nmax = int(np.max(mask))
+        
         layered = np.zeros((nmax, np.shape(mask)[0], np.shape(mask)[1]))
         for i in range(nmax):
             layered[i, :, :] = mask == (i + 1)
@@ -119,7 +131,7 @@ class BubbleDataset(torch.utils.data.Dataset):
             img = np.array(img)
             target['boxes'] = torch.as_tensor(boxes, dtype=torch.float32)[usable]
             target['labels'] = torch.ones((len(usable), ), dtype=torch.int64)
-            target['masks'] = torch.as_tensor(masks,dtype = torch.uint8)[usable]
+            target['masks'] = torch.as_tensor(masks[:len(usable)],dtype = torch.uint8)[usable]
             target['image_id'] = torch.tensor([idx])
             target['area'] = area[usable]
             target['iscrowd'] = torch.zeros((len(usable), ), dtype=torch.int64)
@@ -134,8 +146,8 @@ class BubbleDataset(torch.utils.data.Dataset):
         return len(self)
 
 
-dstr = BubbleDataset(imgs_path,mask_path_train)
-dsval =BubbleDataset(imgs_path,mask_path_test)
+dstr = BubbleDataset(imgs_path,mask_path_train,scale=.5)
+dsval =BubbleDataset(imgs_path,mask_path_test,scale=.5)
 
 loader = DataLoader(dstr,
                     batch_size=2,
@@ -156,7 +168,6 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 
 import utils
-from utils import collate_fn
 from engine import train_one_epoch, evaluate
 
 
@@ -236,3 +247,10 @@ def show_results(img,preds):
 # -
 
 show_results(img,preds[0])
+
+import pickle
+
+with open('model.pkl','wb') as fp:
+    pickle.dump(model.state_dict(),fp)
+
+
