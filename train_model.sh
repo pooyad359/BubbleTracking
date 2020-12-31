@@ -1,0 +1,1 @@
+python train.py --scale 0.5 --batch-size 2 --num-classes 2 --epochs 10 --checkpoint-path ./data/models
